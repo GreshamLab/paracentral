@@ -21,14 +21,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-i',"--input_file")
 parser.add_argument('-o',"--output_file")
 
+#python paracentral.py -g2f -i DGY2310_assembly.gfa -o DGY2310_assembly.fa
 parser.add_argument('-g2f','--gfa_to_fa', action='store_true')
 
+#python paracentral.py -b -i DGY2310_assembly.gfa -s LacZ.fsa -o test.file
 parser.add_argument('-b','--blastn', action='store_true')
 #parser.add_argument('-q','--query_fa')
 parser.add_argument('-s','--subject_fa')
 parser.add_argument('-f','--flanking_size')
-
-#python paracentral.py -i DGY2310_assembly.gfa -s LacZ.fsa -o test.file
 
 args = parser.parse_args()
 
