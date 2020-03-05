@@ -8,6 +8,7 @@ foveal cone.
 
 _v0.2 Internal Beta (I fully approve of who I am, even as i get better.) 
     - output up, down flanking seqeunce of target as well as whole sequence
+    - corrected flanking size assingment
 
 @author: pspealaman
 """
@@ -24,10 +25,9 @@ parser.add_argument('-o',"--output_file")
 #python paracentral.py -g2f -i DGY2310_assembly.gfa -o DGY2310_assembly.fa
 parser.add_argument('-g2f','--gfa_to_fa', action='store_true')
 
-#python paracentral.py -b -i DGY2310_assembly.gfa -s LacZ.fsa -o test.file
+#python paracentral.py -b -i DGY2310_assembly.gfa -q LacZ.fsa -o test.file
 parser.add_argument('-b','--blastn', action='store_true')
-#parser.add_argument('-q','--query_fa')
-parser.add_argument('-s','--subject_fa')
+parser.add_argument('-q','--query_fa')
 parser.add_argument('-f','--flanking_size')
 
 args = parser.parse_args()
@@ -68,7 +68,6 @@ def gff_from_json(json_file_name, max_eval=5e-05):
         print('json file ' + json_file_name + ' not found')
         return()
 
-
     for report_index in range(len(data["BlastOutput2"])):
         data_dict = (data["BlastOutput2"][report_index])
         for each_report in data_dict.items():
@@ -85,7 +84,6 @@ def gff_from_json(json_file_name, max_eval=5e-05):
                                         is_str = str(hit_dict)
                                         if ('hits' in d_key) and (type(d_value)==list) and (len(d_value)>0) and 'No hits found' not in is_str:
                                             for each_hits in d_value:
-                                                print('hits', d_value, str(each_hits['num']))
                                                 for e_key, e_value in each_hits.items():
                                                 
                                                     base = q_title + '.'+str(each_hits['num']) 
@@ -119,7 +117,7 @@ def gff_from_json(json_file_name, max_eval=5e-05):
                                                             if active:
                                                                 active = False
                                                                 query_deets_dict[numb] = ['q_id','hit_from','hit_to','query_from','query_to','bit_score','query_strand','hit_strand','qseq', 'hseq','q_title']
-                                                                query_deets_dict[numb][0] = base
+                                                                query_deets_dict[numb][0] = contig_dict[base]
                                                                 query_deets_dict[numb][1] = hit_from
                                                                 query_deets_dict[numb][2] = hit_to
                                                                 query_deets_dict[numb][3] = query_from
@@ -130,24 +128,15 @@ def gff_from_json(json_file_name, max_eval=5e-05):
                                                                 query_deets_dict[numb][8] = qseq
                                                                 query_deets_dict[numb][9] = hseq
                                                                 query_deets_dict[numb][10] = q_title
-                                                                print('is hit', numb, query_deets_dict[numb])
-                                                                numb = 0
-                                                                
+                                                               
 
     ct = 0    
     for numb, deets in query_deets_dict.items():
-        contig = query_deets_dict[numb][10]
-                
-        #base = query_deets_dict[numb][0]
-                
-        #contig = contig_dict[base]
-        
+        contig = query_deets_dict[numb][0]
+
         hit_from = int(query_deets_dict[numb][1])
         hit_to = int(query_deets_dict[numb][2])
-        
-        q_from = int(query_deets_dict[numb][3])
-        q_to = int(query_deets_dict[numb][4])
-        
+                
         if hit_from < hit_to:
             start = hit_from
             stop = hit_to
@@ -167,11 +156,11 @@ def gff_from_json(json_file_name, max_eval=5e-05):
         else:
             orient = 'forward'
             
-        mod_seq = ('{}_{}').format(q_from, q_to)
+        mod_seq = ('{}_{}').format(query_from, query_to)
         
         node_loci = ('{},{},{},{}').format(contig, query_deets_dict[numb][3], query_deets_dict[numb][4], float(query_deets_dict[numb][5]))
         gff_line = ('{}\terisapfel\tblastn_aligned\t{}\t{}\t.\t{}\t{}\tnode_uid={}; orient={}; from_to={}\n').format(contig, start, stop, sign, int(round(bit_score)), node_loci, orient, mod_seq)
-        
+        print(gff_line)
         outfile.write(gff_line)
         
         lookup_dict[ct]={'contig': contig, 'hit_from':start, 'hit_to':stop, 'sign':sign, 'len':0}
@@ -180,17 +169,34 @@ def gff_from_json(json_file_name, max_eval=5e-05):
 
     return(lookup_dict)
     
-def pull_sequences(infile_name):
+def pull_gfa_sequences(infile_name):
     contig_seq = {}
     
     infile = open(infile_name)
     
     for line in infile:
-        #print(line)
         if line[0] == 'S':
             contig_name = line.split('\t')[1].strip()
             seq = line.split('\t')[2].strip()
             contig_seq[contig_name]=seq
+
+    return(contig_seq)
+    
+def pull_fa_sequences(infile_name):
+    contig_seq = {}
+    
+    infile = open(infile_name)
+    
+    for line in infile:
+        if line[0] == '>':
+            contig_name = line.split('>')[1].strip()
+        else:
+            if contig_name not in contig_seq:
+                seq = line.strip()
+                contig_seq[contig_name]=seq
+            else:
+                seq = line.strip()
+                contig_seq[contig_name]+=seq 
 
     return(contig_seq)
  
@@ -202,34 +208,35 @@ if args.gfa_to_fa:
 if args.blastn:
     infile_name = args.input_file
     fafile_name = args.input_file+'_temp.fa'
-    
-    if '/' in args.subject_fa:
-        subject_name = args.subject_fa.rsplit('/',1)[1].split('.fa')[0]
+            
+    if '/' in args.query_fa:
+        subject_name = args.query_fa.rsplit('/',1)[1].split('.fa')[0]
     else:
-        subject_name = args.subject_fa.split('.fa')[0]
+        subject_name = args.query_fa.split('.fa')[0]
     
     if args.flanking_size:
         flanking_size = int(args.flanking_size)
     else:
         flanking_size = 1000
         
-    #Future Versions: A better structure would be to call this once instead of each time
-    gfa_to_fa(infile_name, fafile_name)
+    if infile_name.rsplit('.',1)[1]=='gfa':
+        gfa_to_fa(infile_name, fafile_name)
+        contig_seq = pull_gfa_sequences(infile_name)
+    else:
+        fafile_name = infile_name
+        contig_seq = pull_fa_sequences(infile_name)
+        
     
-    bashCommand = ('blastn -query {query_fa} -subject {subject_fa} -outfmt 15 -out paracentral_temp.json').format(query_fa=fafile_name, subject_fa=args.subject_fa)
+    bashCommand = ('blastn -query {query_fa} -subject {subject_fa} -outfmt 15 -out paracentral_temp.json').format(query_fa=args.query_fa, subject_fa=fafile_name)
     output_handler(subprocess.check_output([bashCommand],stderr=subprocess.STDOUT,shell=True))
-    #print(bashCommand)
             
-    lookup_dict = gff_from_json('paracentral_temp.json', max_eval=5e-05)
+    lookup_dict = gff_from_json('paracentral_temp.json', 1)
     
     if len(lookup_dict) > 0:
         outfile_name = args.output_file
         outfile = open(outfile_name,'w')
         
-        contig_seq = pull_sequences(infile_name)
-        
         for ct, deets in lookup_dict.items():
-            print(ct, deets)
             contig = deets['contig']
             hit_from = int(deets['hit_from'])
             hit_to = int(deets['hit_to'])
@@ -241,23 +248,19 @@ if args.blastn:
             contig_length = deets['len']
             
             if contig in contig_seq:
-                align_name = ('{}_{}_{}').format(subject_name, contig, ct)
+                align_name = ('{}_{}_{}_{}').format(subject_name, contig, ct, sign)
                 core_seq = contig_seq[contig][hit_from:hit_to+1]
-                
                 if sign == '+':
-                    upstream_seq = contig_seq[contig][max(hit_from-flanking_size,1):min(contig_length, hit_to-1)]
-                    downstream_seq = contig_seq[contig][max(hit_from+1, 1):min(contig_length, flanking_size+hit_to+1)]
+                    upstream_seq = contig_seq[contig][max(hit_from-flanking_size-1,1):min(contig_length, hit_from-1)]
+                    downstream_seq = contig_seq[contig][max(hit_to, 1):min(contig_length, flanking_size+hit_to)]
                     
                 else:
-                    upstream_seq = contig_seq[contig][max(hit_from+1, 1):min(flanking_size+hit_to+1,contig_length)]
-                    downstream_seq = contig_seq[contig][max(hit_from-flanking_size, 1):min(hit_to-1, contig_length)]  
+                    upstream_seq = contig_seq[contig][max(hit_to, 1):min(flanking_size+hit_to,contig_length)]
+                    downstream_seq = contig_seq[contig][max(hit_from-flanking_size-1, 1):min(hit_from-1, contig_length)]  
                     
-                
                 whole_seq = contig_seq[contig][max(hit_from-flanking_size,1):min(flanking_size+hit_to+1,contig_length)]
                     
-                outline = ('>{align_name}_upstream\n{up_seq}\n>{align_name}_downstream\n{dn_seq}\{align_name}_whole_fragment\n{wh_seq}\n').format(align_name=align_name, up_seq=upstream_seq, dn_seq=downstream_seq, wh_seq=whole_seq)
+                outline = ('>{align_name}_upstream\n{up_seq}\n>{align_name}_downstream\n{dn_seq}\n>{align_name}_whole_fragment\n{wh_seq}\n').format(align_name=align_name, up_seq=upstream_seq, dn_seq=downstream_seq, wh_seq=whole_seq)
                 outfile.write(outline)
         
         outfile.close()
-        
-    
